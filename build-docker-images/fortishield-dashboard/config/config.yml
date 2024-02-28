@@ -1,0 +1,5 @@
+nodes:
+  # FortiShield dashboard server nodes
+  dashboard:
+    - name: demo.dashboard
+      ip: demo.dashboard

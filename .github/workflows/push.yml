@@ -1,0 +1,312 @@
+name: FortiShield Docker pipeline
+
+on: [pull_request]
+
+jobs:
+  build-docker-images:
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Build FortiShield images
+      run: build-docker-images/build-images.sh
+
+    - name: Create enviroment variables
+      run: cat .env > $GITHUB_ENV
+
+    - name: Create backup Docker images
+      run: |
+        mkdir -p /home/runner/work/fortishield-docker/fortishield-docker/docker-images/
+        docker save fortishield/fortishield-manager:${{env.FORTISHIELD_IMAGE_VERSION}} -o /home/runner/work/fortishield-docker/fortishield-docker/docker-images/fortishield-manager.tar
+        docker save fortishield/fortishield-indexer:${{env.FORTISHIELD_IMAGE_VERSION}} -o /home/runner/work/fortishield-docker/fortishield-docker/docker-images/fortishield-indexer.tar
+        docker save fortishield/fortishield-dashboard:${{env.FORTISHIELD_IMAGE_VERSION}} -o /home/runner/work/fortishield-docker/fortishield-docker/docker-images/fortishield-dashboard.tar
+
+    - name: Temporarily save FortiShield manager Docker image
+      uses: actions/upload-artifact@v3
+      with:
+        name: docker-artifact-manager
+        path: /home/runner/work/fortishield-docker/fortishield-docker/docker-images/fortishield-manager.tar
+        retention-days: 1
+
+    - name: Temporarily save FortiShield indexer Docker image
+      uses: actions/upload-artifact@v3
+      with:
+        name: docker-artifact-indexer
+        path: /home/runner/work/fortishield-docker/fortishield-docker/docker-images/fortishield-indexer.tar
+        retention-days: 1
+
+    - name: Temporarily save FortiShield dashboard Docker image
+      uses: actions/upload-artifact@v3
+      with:
+        name: docker-artifact-dashboard
+        path: /home/runner/work/fortishield-docker/fortishield-docker/docker-images/fortishield-dashboard.tar
+        retention-days: 1
+
+    - name: Install Goss
+      uses: e1himself/goss-installation-action@v1.0.3
+      with:
+        version: v0.3.16
+
+    - name: Execute Goss tests (fortishield-manager)
+      run: dgoss run fortishield/fortishield-manager:${{env.FORTISHIELD_IMAGE_VERSION}}
+      env:
+        GOSS_SLEEP: 30
+        GOSS_FILE: .github/.goss.yaml
+
+  check-single-node:
+    runs-on: ubuntu-latest
+    needs: build-docker-images
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Create enviroment variables
+      run: cat .env > $GITHUB_ENV
+
+    - name: Retrieve saved FortiShield indexer Docker image
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-artifact-indexer
+
+    - name: Retrieve saved FortiShield manager Docker image
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-artifact-manager
+
+    - name: Retrieve saved FortiShield dashboard Docker image
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-artifact-dashboard
+
+    - name: Docker load
+      run: |
+        docker load --input ./fortishield-indexer.tar
+        docker load --input ./fortishield-dashboard.tar
+        docker load --input ./fortishield-manager.tar
+
+
+    - name: Create single node certficates
+      run: docker-compose -f single-node/generate-indexer-certs.yml run --rm generator
+
+    - name: Start single node stack
+      run: docker-compose -f single-node/docker-compose.yml up -d
+
+    - name: Check FortiShield indexer start
+      run: |
+       sleep 60
+       status_green="`curl -XGET "https://0.0.0.0:9200/_cluster/health" -u admin:SecretPassword -k -s | grep green | wc -l`"
+       if [[ $status_green -eq 1 ]]; then
+        curl -XGET "https://0.0.0.0:9200/_cluster/health" -u admin:SecretPassword -k -s
+       else
+        curl -XGET "https://0.0.0.0:9200/_cluster/health" -u admin:SecretPassword -k -s
+        exit 1
+       fi
+       status_index="`curl -XGET "https://0.0.0.0:9200/_cat/indices" -u admin:SecretPassword -k -s | wc -l`"
+       status_index_green="`curl -XGET "https://0.0.0.0:9200/_cat/indices" -u admin:SecretPassword -k -s | grep "green" | wc -l`"
+       if [[ $status_index_green -eq $status_index ]]; then
+        curl -XGET "https://0.0.0.0:9200/_cat/indices" -u admin:SecretPassword -k -s
+       else
+        curl -XGET "https://0.0.0.0:9200/_cat/indices" -u admin:SecretPassword -k -s
+        exit 1
+       fi
+
+
+    - name: Check FortiShield indexer nodes
+      run: |
+       nodes="`curl -XGET "https://0.0.0.0:9200/_cat/nodes" -u admin:SecretPassword -k -s | grep -E "indexer" | wc -l`"
+       if [[ $nodes -eq 1 ]]; then
+        echo "FortiShield indexer nodes: ${nodes}"
+       else
+        echo "FortiShield indexer nodes: ${nodes}"
+        exit 1
+       fi
+
+    - name: Check documents into fortishield-alerts index
+      run: |
+       sleep 120
+       docs="`curl -XGET "https://0.0.0.0:9200/fortishield-alerts*/_count" -u admin:SecretPassword -k -s | jq -r ".count"`"
+       if [[ $docs -gt 100 ]]; then
+        echo "fortishield-alerts index documents: ${docs}"
+       else
+        echo "fortishield-alerts index documents: ${docs}"
+        exit 1
+       fi
+
+    - name: Check FortiShield templates
+      run: |
+       qty_templates="`curl -XGET "https://0.0.0.0:9200/_cat/templates" -u admin:SecretPassword -k -s | grep -P "fortishield|fortishield-agent|fortishield-statistics" | wc -l`"
+       templates="`curl -XGET "https://0.0.0.0:9200/_cat/templates" -u admin:SecretPassword -k -s | grep -P "fortishield|fortishield-agent|fortishield-statistics"`"
+       if [[ $qty_templates -eq 3 ]]; then
+        echo "fortishield templates:"
+        echo "${templates}"
+       else
+        echo "fortishield templates:"
+        echo "${templates}"
+        exit 1
+       fi
+
+    - name: Check FortiShield manager start
+      run: |
+        services="`curl -k -s -X GET "https://0.0.0.0:55000/manager/status?pretty=true" -H  "Authorization: Bearer ${{env.TOKEN}}" | jq -r .data.affected_items | grep running | wc -l`"
+        if [[ $services -gt 9 ]]; then
+          echo "FortiShield Manager Services: ${services}"
+          echo "OK"
+        else
+          echo "FortiShield indexer nodes: ${nodes}"
+          curl -k -X GET "https://0.0.0.0:55000/manager/status?pretty=true" -H  "Authorization: Bearer ${{env.TOKEN}}" | jq -r .data.affected_items
+          exit 1
+        fi
+      env:
+        TOKEN: $(curl -s -u fortishield-wui:MyS3cr37P450r.*- -k -X GET "https://0.0.0.0:55000/security/user/authenticate?raw=true")
+
+    - name: Check errors in ossec.log
+      run: ./.github/single-node-log-check.sh
+
+
+    - name: Check filebeat output
+      run: ./.github/single-node-filebeat-check.sh
+
+    - name: Check FortiShield dashboard service URL
+      run: |
+       status=$(curl -XGET --silent  https://0.0.0.0:443/app/status -k -u admin:SecretPassword -I -s | grep -E "^HTTP" | awk  '{print $2}')
+       if [[ $status -eq 200 ]]; then
+        echo "FortiShield dashboard status: ${status}"
+       else
+        echo "FortiShield dashboard status: ${status}"
+        exit 1
+       fi
+
+    - name: Stop single node stack
+      run: docker-compose -f single-node/docker-compose.yml down
+
+  check-multi-node:
+    runs-on: ubuntu-latest
+    needs: build-docker-images
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Create enviroment variables
+      run: cat .env > $GITHUB_ENV
+
+    - name: Retrieve saved FortiShield dashboard Docker image
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-artifact-dashboard
+
+    - name: Retrieve saved FortiShield manager Docker image
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-artifact-manager
+
+    - name: Retrieve saved FortiShield indexer Docker image
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-artifact-indexer
+
+    - name: Docker load
+      run: |
+        docker load --input ./fortishield-manager.tar
+        docker load --input ./fortishield-indexer.tar
+        docker load --input ./fortishield-dashboard.tar
+
+    - name: Create multi node certficates
+      run: docker-compose -f multi-node/generate-indexer-certs.yml run --rm generator
+
+    - name: Start multi node stack
+      run: docker-compose -f multi-node/docker-compose.yml up -d
+
+    - name: Check FortiShield indexer start
+      run: |
+       sleep 120
+       status_green="`curl -XGET "https://0.0.0.0:9200/_cluster/health" -u admin:SecretPassword -k -s | grep green | wc -l`"
+       if [[ $status_green -eq 1 ]]; then
+        curl -XGET "https://0.0.0.0:9200/_cluster/health" -u admin:SecretPassword -k -s
+       else
+        curl -XGET "https://0.0.0.0:9200/_cluster/health" -u admin:SecretPassword -k -s
+        exit 1
+       fi
+       status_index="`curl -XGET "https://0.0.0.0:9200/_cat/indices" -u admin:SecretPassword -k -s | wc -l`"
+       status_index_green="`curl -XGET "https://0.0.0.0:9200/_cat/indices" -u admin:SecretPassword -k -s | grep -E "green" | wc -l`"
+       if [[ $status_index_green -eq $status_index ]]; then
+        curl -XGET "https://0.0.0.0:9200/_cat/indices" -u admin:SecretPassword -k -s
+       else
+        curl -XGET "https://0.0.0.0:9200/_cat/indices" -u admin:SecretPassword -k -s
+        exit 1
+       fi
+
+    - name: Check FortiShield indexer nodes
+      run: |
+       nodes="`curl -XGET "https://0.0.0.0:9200/_cat/nodes" -u admin:SecretPassword -k -s | grep -E "indexer" | wc -l`"
+       if [[ $nodes -eq 3 ]]; then
+        echo "FortiShield indexer nodes: ${nodes}"
+       else
+        echo "FortiShield indexer nodes: ${nodes}"
+        exit 1
+       fi
+
+    - name: Check documents into fortishield-alerts index
+      run: |
+       sleep 120
+       docs="`curl -XGET "https://0.0.0.0:9200/fortishield-alerts*/_count" -u admin:SecretPassword -k -s | jq -r ".count"`"
+       if [[ $docs -gt 100 ]]; then
+        echo "fortishield-alerts index documents: ${docs}"
+       else
+        echo "fortishield-alerts index documents: ${docs}"
+        exit 1
+       fi
+
+    - name: Check FortiShield templates
+      run: |
+       qty_templates="`curl -XGET "https://0.0.0.0:9200/_cat/templates" -u admin:SecretPassword -k -s | grep "fortishield" | wc -l`"
+       templates="`curl -XGET "https://0.0.0.0:9200/_cat/templates" -u admin:SecretPassword -k -s | grep "fortishield"`"
+       if [[ $qty_templates -eq 3 ]]; then
+        echo "fortishield templates:"
+        echo "${templates}"
+       else
+        echo "fortishield templates:"
+        echo "${templates}"
+        exit 1
+       fi
+
+    - name: Check FortiShield manager start
+      run: |
+        services="`curl -k -s -X GET "https://0.0.0.0:55000/manager/status?pretty=true" -H  "Authorization: Bearer ${{env.TOKEN}}" | jq -r .data.affected_items | grep running | wc -l`"
+        if [[ $services -gt 10 ]]; then
+          echo "FortiShield Manager Services: ${services}"
+          echo "OK"
+        else
+          echo "FortiShield indexer nodes: ${nodes}"
+          curl -k -s -X GET "https://0.0.0.0:55000/manager/status?pretty=true" -H  "Authorization: Bearer ${{env.TOKEN}}" | jq -r .data.affected_items
+          exit 1
+        fi
+        nodes=$(curl -k -s -X GET "https://0.0.0.0:55000/cluster/nodes" -H "Authorization: Bearer ${{env.TOKEN}}" | jq -r ".data.affected_items[].name" | wc -l)
+        if [[ $nodes -eq 2 ]]; then
+         echo "FortiShield manager nodes: ${nodes}"
+        else
+         echo "FortiShield manager nodes: ${nodes}"
+         exit 1
+        fi
+      env:
+        TOKEN: $(curl -s -u fortishield-wui:MyS3cr37P450r.*- -k -X GET "https://0.0.0.0:55000/security/user/authenticate?raw=true")
+
+    - name: Check errors in ossec.log
+      run: ./.github/multi-node-log-check.sh
+
+
+    - name: Check filebeat output
+      run: ./.github/multi-node-filebeat-check.sh
+
+    - name: Check FortiShield dashboard service URL
+      run: |
+       status=$(curl -XGET --silent  https://0.0.0.0:443/app/status -k -u admin:SecretPassword -I | grep -E "^HTTP" | awk  '{print $2}')
+       if [[ $status -eq 200 ]]; then
+        echo "FortiShield dashboard status: ${status}"
+       else
+        echo "FortiShield dashboard status: ${status}"
+        exit 1
+       fi

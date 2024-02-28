@@ -1,0 +1,10 @@
+# FortiShield App Copyright (C) 2017, FortiShield Inc. (License GPLv2)
+version: '3'
+
+services:
+  generator:
+    image: fortishield/fortishield-certs-generator:0.0.1
+    hostname: fortishield-certs-generator
+    volumes:
+      - ./config/fortishield_indexer_ssl_certs/:/certificates/
+      - ./config/certs.yml:/config/certs.yml

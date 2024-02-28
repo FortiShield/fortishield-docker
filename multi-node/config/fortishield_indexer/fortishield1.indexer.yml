@@ -1,0 +1,38 @@
+network.host: fortishield1.indexer
+node.name: fortishield1.indexer
+cluster.initial_master_nodes:
+        - fortishield1.indexer
+        - fortishield2.indexer
+        - fortishield3.indexer
+cluster.name: "fortishield-cluster"
+discovery.seed_hosts:
+        - fortishield1.indexer
+        - fortishield2.indexer
+        - fortishield3.indexer
+node.max_local_storage_nodes: "3"
+path.data: /var/lib/fortishield-indexer
+path.logs: /var/log/fortishield-indexer
+plugins.security.ssl.http.pemcert_filepath: ${OPENSEARCH_PATH_CONF}/certs/fortishield1.indexer.pem
+plugins.security.ssl.http.pemkey_filepath: ${OPENSEARCH_PATH_CONF}/certs/fortishield1.indexer.key
+plugins.security.ssl.http.pemtrustedcas_filepath: ${OPENSEARCH_PATH_CONF}/certs/root-ca.pem
+plugins.security.ssl.transport.pemcert_filepath: ${OPENSEARCH_PATH_CONF}/certs/fortishield1.indexer.pem
+plugins.security.ssl.transport.pemkey_filepath: ${OPENSEARCH_PATH_CONF}/certs/fortishield1.indexer.key
+plugins.security.ssl.transport.pemtrustedcas_filepath: ${OPENSEARCH_PATH_CONF}/certs/root-ca.pem
+plugins.security.ssl.http.enabled: true
+plugins.security.ssl.transport.enforce_hostname_verification: false
+plugins.security.ssl.transport.resolve_hostname: false
+plugins.security.authcz.admin_dn:
+- "CN=admin,OU=FortiShield,O=FortiShield,L=California,C=US"
+plugins.security.check_snapshot_restore_write_privileges: true
+plugins.security.enable_snapshot_restore_privilege: true
+plugins.security.nodes_dn:
+- "CN=fortishield1.indexer,OU=FortiShield,O=FortiShield,L=California,C=US"
+- "CN=fortishield2.indexer,OU=FortiShield,O=FortiShield,L=California,C=US"
+- "CN=fortishield3.indexer,OU=FortiShield,O=FortiShield,L=California,C=US"
+- "CN=filebeat,OU=FortiShield,O=FortiShield,L=California,C=US"
+plugins.security.restapi.roles_enabled:
+- "all_access"
+- "security_rest_api_access"
+plugins.security.allow_default_init_securityindex: true
+cluster.routing.allocation.disk.threshold_enabled: false
+compatibility.override_main_response_version: true

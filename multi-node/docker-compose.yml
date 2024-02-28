@@ -1,0 +1,225 @@
+# FortiShield App Copyright (C) 2017, FortiShield Inc. (License GPLv2)
+version: '3.7'
+
+services:
+  fortishield.master:
+    image: fortishield/fortishield-manager:5.0.0
+    hostname: fortishield.master
+    restart: always
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 655360
+        hard: 655360
+    ports:
+      - "1515:1515"
+      - "514:514/udp"
+      - "55000:55000"
+    environment:
+      - INDEXER_URL=https://fortishield1.indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=SecretPassword
+      - FILEBEAT_SSL_VERIFICATION_MODE=full
+      - SSL_CERTIFICATE_AUTHORITIES=/etc/ssl/root-ca.pem
+      - SSL_CERTIFICATE=/etc/ssl/filebeat.pem
+      - SSL_KEY=/etc/ssl/filebeat.key
+      - API_USERNAME=fortishield-wui
+      - API_PASSWORD=MyS3cr37P450r.*-
+    volumes:
+      - master-fortishield-api-configuration:/var/ossec/api/configuration
+      - master-fortishield-etc:/var/ossec/etc
+      - master-fortishield-logs:/var/ossec/logs
+      - master-fortishield-queue:/var/ossec/queue
+      - master-fortishield-var-multigroups:/var/ossec/var/multigroups
+      - master-fortishield-integrations:/var/ossec/integrations
+      - master-fortishield-active-response:/var/ossec/active-response/bin
+      - master-fortishield-agentless:/var/ossec/agentless
+      - master-fortishield-wodles:/var/ossec/wodles
+      - master-filebeat-etc:/etc/filebeat
+      - master-filebeat-var:/var/lib/filebeat
+      - ./config/fortishield_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/root-ca.pem
+      - ./config/fortishield_indexer_ssl_certs/fortishield.master.pem:/etc/ssl/filebeat.pem
+      - ./config/fortishield_indexer_ssl_certs/fortishield.master-key.pem:/etc/ssl/filebeat.key
+      - ./config/fortishield_cluster/fortishield_manager.conf:/fortishield-config-mount/etc/ossec.conf
+
+  fortishield.worker:
+    image: fortishield/fortishield-manager:5.0.0
+    hostname: fortishield.worker
+    restart: always
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 655360
+        hard: 655360
+    environment:
+      - INDEXER_URL=https://fortishield1.indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=SecretPassword
+      - FILEBEAT_SSL_VERIFICATION_MODE=full
+      - SSL_CERTIFICATE_AUTHORITIES=/etc/ssl/root-ca.pem
+      - SSL_CERTIFICATE=/etc/ssl/filebeat.pem
+      - SSL_KEY=/etc/ssl/filebeat.key
+    volumes:
+      - worker-fortishield-api-configuration:/var/ossec/api/configuration
+      - worker-fortishield-etc:/var/ossec/etc
+      - worker-fortishield-logs:/var/ossec/logs
+      - worker-fortishield-queue:/var/ossec/queue
+      - worker-fortishield-var-multigroups:/var/ossec/var/multigroups
+      - worker-fortishield-integrations:/var/ossec/integrations
+      - worker-fortishield-active-response:/var/ossec/active-response/bin
+      - worker-fortishield-agentless:/var/ossec/agentless
+      - worker-fortishield-wodles:/var/ossec/wodles
+      - worker-filebeat-etc:/etc/filebeat
+      - worker-filebeat-var:/var/lib/filebeat
+      - ./config/fortishield_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/root-ca.pem
+      - ./config/fortishield_indexer_ssl_certs/fortishield.worker.pem:/etc/ssl/filebeat.pem
+      - ./config/fortishield_indexer_ssl_certs/fortishield.worker-key.pem:/etc/ssl/filebeat.key
+      - ./config/fortishield_cluster/fortishield_worker.conf:/fortishield-config-mount/etc/ossec.conf
+
+  fortishield1.indexer:
+    image: fortishield/fortishield-indexer:5.0.0
+    hostname: fortishield1.indexer
+    restart: always
+    ports:
+      - "9200:9200"
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+      - "bootstrap.memory_lock=true"
+      - 'INDEXER_PASSWORD=SecretPassword'
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - fortishield-indexer-data-1:/var/lib/fortishield-indexer
+      - ./config/fortishield_indexer_ssl_certs/root-ca.pem:/usr/share/fortishield-indexer/certs/root-ca.pem
+      - ./config/fortishield_indexer_ssl_certs/fortishield1.indexer-key.pem:/usr/share/fortishield-indexer/certs/fortishield1.indexer.key
+      - ./config/fortishield_indexer_ssl_certs/fortishield1.indexer.pem:/usr/share/fortishield-indexer/certs/fortishield1.indexer.pem
+      - ./config/fortishield_indexer_ssl_certs/admin.pem:/usr/share/fortishield-indexer/certs/admin.pem
+      - ./config/fortishield_indexer_ssl_certs/admin-key.pem:/usr/share/fortishield-indexer/certs/admin-key.pem
+      - ./config/fortishield_indexer/fortishield1.indexer.yml:/usr/share/fortishield-indexer/opensearch.yml
+      - ./config/fortishield_indexer/internal_users.yml:/usr/share/fortishield-indexer/opensearch-security/internal_users.yml
+
+  fortishield2.indexer:
+    image: fortishield/fortishield-indexer:5.0.0
+    hostname: fortishield2.indexer
+    restart: always
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+      - "bootstrap.memory_lock=true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - fortishield-indexer-data-2:/var/lib/fortishield-indexer
+      - ./config/fortishield_indexer_ssl_certs/root-ca.pem:/usr/share/fortishield-indexer/certs/root-ca.pem
+      - ./config/fortishield_indexer_ssl_certs/fortishield2.indexer-key.pem:/usr/share/fortishield-indexer/certs/fortishield2.indexer.key
+      - ./config/fortishield_indexer_ssl_certs/fortishield2.indexer.pem:/usr/share/fortishield-indexer/certs/fortishield2.indexer.pem
+      - ./config/fortishield_indexer/fortishield2.indexer.yml:/usr/share/fortishield-indexer/opensearch.yml
+      - ./config/fortishield_indexer/internal_users.yml:/usr/share/fortishield-indexer/opensearch-security/internal_users.yml
+
+  fortishield3.indexer:
+    image: fortishield/fortishield-indexer:5.0.0
+    hostname: fortishield3.indexer
+    restart: always
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+      - "bootstrap.memory_lock=true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - fortishield-indexer-data-3:/var/lib/fortishield-indexer
+      - ./config/fortishield_indexer_ssl_certs/root-ca.pem:/usr/share/fortishield-indexer/certs/root-ca.pem
+      - ./config/fortishield_indexer_ssl_certs/fortishield3.indexer-key.pem:/usr/share/fortishield-indexer/certs/fortishield3.indexer.key
+      - ./config/fortishield_indexer_ssl_certs/fortishield3.indexer.pem:/usr/share/fortishield-indexer/certs/fortishield3.indexer.pem
+      - ./config/fortishield_indexer/fortishield3.indexer.yml:/usr/share/fortishield-indexer/opensearch.yml
+      - ./config/fortishield_indexer/internal_users.yml:/usr/share/fortishield-indexer/opensearch-security/internal_users.yml
+
+  fortishield.dashboard:
+    image: fortishield/fortishield-dashboard:5.0.0
+    hostname: fortishield.dashboard
+    restart: always
+    ports:
+      - 443:5601
+    environment:
+      - OPENSEARCH_HOSTS="https://fortishield1.indexer:9200"
+      - FORTISHIELD_API_URL="https://fortishield.master"
+      - API_USERNAME=fortishield-wui
+      - API_PASSWORD=MyS3cr37P450r.*-
+      - DASHBOARD_USERNAME=kibanaserver
+      - DASHBOARD_PASSWORD=kibanaserver
+    volumes:
+      - ./config/fortishield_indexer_ssl_certs/fortishield.dashboard.pem:/usr/share/fortishield-dashboard/certs/fortishield-dashboard.pem
+      - ./config/fortishield_indexer_ssl_certs/fortishield.dashboard-key.pem:/usr/share/fortishield-dashboard/certs/fortishield-dashboard-key.pem
+      - ./config/fortishield_indexer_ssl_certs/root-ca.pem:/usr/share/fortishield-dashboard/certs/root-ca.pem
+      - ./config/fortishield_dashboard/opensearch_dashboards.yml:/usr/share/fortishield-dashboard/config/opensearch_dashboards.yml
+      - ./config/fortishield_dashboard/fortishield.yml:/usr/share/fortishield-dashboard/data/fortishield/config/fortishield.yml
+      - fortishield-dashboard-config:/usr/share/fortishield-dashboard/data/fortishield/config
+      - fortishield-dashboard-custom:/usr/share/fortishield-dashboard/plugins/fortishield/public/assets/custom
+    depends_on:
+      - fortishield1.indexer
+    links:
+      - fortishield1.indexer:fortishield1.indexer
+      - fortishield.master:fortishield.master
+
+  nginx:
+    image: nginx:stable
+    hostname: nginx
+    restart: always
+    ports:
+      - "1514:1514"
+    depends_on:
+      - fortishield.master
+      - fortishield.worker
+      - fortishield.dashboard
+    links:
+      - fortishield.master:fortishield.master
+      - fortishield.worker:fortishield.worker
+      - fortishield.dashboard:fortishield.dashboard
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
+volumes:
+  master-fortishield-api-configuration:
+  master-fortishield-etc:
+  master-fortishield-logs:
+  master-fortishield-queue:
+  master-fortishield-var-multigroups:
+  master-fortishield-integrations:
+  master-fortishield-active-response:
+  master-fortishield-agentless:
+  master-fortishield-wodles:
+  master-filebeat-etc:
+  master-filebeat-var:
+  worker-fortishield-api-configuration:
+  worker-fortishield-etc:
+  worker-fortishield-logs:
+  worker-fortishield-queue:
+  worker-fortishield-var-multigroups:
+  worker-fortishield-integrations:
+  worker-fortishield-active-response:
+  worker-fortishield-agentless:
+  worker-fortishield-wodles:
+  worker-filebeat-etc:
+  worker-filebeat-var:
+  fortishield-indexer-data-1:
+  fortishield-indexer-data-2:
+  fortishield-indexer-data-3:
+  fortishield-dashboard-config:
+  fortishield-dashboard-custom:

@@ -1,0 +1,4 @@
+single-node/config/fortishield_indexer_ssl_certs/*.pem
+single-node/config/fortishield_indexer_ssl_certs/*.key
+multi-node/config/fortishield_indexer_ssl_certs/*.pem
+multi-node/config/fortishield_indexer_ssl_certs/*.key

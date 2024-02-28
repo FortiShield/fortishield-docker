@@ -1,0 +1,16 @@
+nodes:
+  # FortiShield indexer server nodes
+  indexer:
+    - name: fortishield.indexer
+      ip: fortishield.indexer
+
+  # FortiShield server nodes
+  # Use node_type only with more than one FortiShield manager
+  server:
+    - name: fortishield.manager
+      ip: fortishield.manager
+
+  # FortiShield dashboard node
+  dashboard:
+    - name: fortishield.dashboard
+      ip: fortishield.dashboard
